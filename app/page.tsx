@@ -1,65 +1,240 @@
-import Image from "next/image";
+import { sql } from '@/lib/db';
+import { MONITORED_BRANDS } from '@/config/brands';
+import { revalidatePath } from 'next/cache';
 
-export default function Home() {
+interface AuditLog {
+  id: number;
+  request_id: string;
+  brand_url: string;
+  region: string;
+  timestamp: string;
+  status: number;
+  ttfb: number;
+  headers: Record<string, string>;
+  error_message: string | null;
+}
+
+async function getRecentAuditLogs(): Promise<AuditLog[]> {
+  try {
+    const result = await sql<AuditLog[]>`
+      SELECT 
+        id, 
+        request_id::text, 
+        brand_url, 
+        region, 
+        timestamp, 
+        status, 
+        ttfb, 
+        headers, 
+        error_message
+      FROM audit_logs
+      ORDER BY timestamp DESC
+      LIMIT 50
+    `;
+    return result;
+  } catch (error) {
+    console.error('Failed to fetch audit logs:', error);
+    return [];
+  }
+}
+
+async function getLatestRunSummary() {
+  try {
+    const result = await sql`
+      SELECT 
+        request_id::text,
+        COUNT(*) as probe_count,
+        MIN(timestamp) as run_time,
+        COUNT(DISTINCT brand_url) as brands_count,
+        SUM(CASE WHEN error_message IS NOT NULL THEN 1 ELSE 0 END) as error_count
+      FROM audit_logs
+      WHERE timestamp > NOW() - INTERVAL '2 hours'
+      GROUP BY request_id
+      ORDER BY MIN(timestamp) DESC
+      LIMIT 1
+    `;
+    
+    if (result.length > 0) {
+      return result[0];
+    }
+    return null;
+  } catch (error) {
+    console.error('Failed to fetch latest run summary:', error);
+    return null;
+  }
+}
+
+async function triggerAudit() {
+  'use server';
+  
+  try {
+    const baseUrl = process.env.VERCEL_URL 
+      ? `https://${process.env.VERCEL_URL}`
+      : 'http://localhost:3000';
+    
+    const response = await fetch(`${baseUrl}/api/cron/run-audit`, {
+      headers: {
+        Authorization: `Bearer ${process.env.CRON_SECRET}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Audit failed with status ${response.status}`);
+    }
+
+    revalidatePath('/');
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to trigger audit:', error);
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Unknown error' 
+    };
+  }
+}
+
+export default async function Home() {
+  const recentLogs = await getRecentAuditLogs();
+  const latestRun = await getLatestRunSummary();
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-4xl font-bold text-slate-900 dark:text-white">
+            Global Edge Efficiency Analyzer
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+          <p className="mt-2 text-lg text-slate-600 dark:text-slate-300">
+            Distributed edge cache auditing from {MONITORED_BRANDS.length} brands across 5 global regions
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+
+        {/* Control Panel */}
+        <div className="mb-8 rounded-lg bg-white p-6 shadow-md dark:bg-slate-800">
+          <h2 className="mb-4 text-xl font-semibold text-slate-900 dark:text-white">
+            Control Panel
+          </h2>
+          <form action={triggerAudit}>
+            <button
+              type="submit"
+              className="rounded-lg bg-blue-600 px-6 py-3 font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            >
+              Run Audit Now
+            </button>
+          </form>
+          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+            Manually trigger an audit cycle for all monitored brands
+          </p>
         </div>
-      </main>
+
+        {/* Latest Run Summary */}
+        {latestRun && (
+          <div className="mb-8 rounded-lg bg-white p-6 shadow-md dark:bg-slate-800">
+            <h2 className="mb-4 text-xl font-semibold text-slate-900 dark:text-white">
+              Latest Run Summary
+            </h2>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+              <div className="rounded-lg bg-slate-50 p-4 dark:bg-slate-700">
+                <div className="text-sm text-slate-600 dark:text-slate-400">Run Time</div>
+                <div className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
+                  {new Date(latestRun.run_time).toLocaleString()}
+                </div>
+              </div>
+              <div className="rounded-lg bg-slate-50 p-4 dark:bg-slate-700">
+                <div className="text-sm text-slate-600 dark:text-slate-400">Brands Audited</div>
+                <div className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
+                  {latestRun.brands_count}
+                </div>
+              </div>
+              <div className="rounded-lg bg-slate-50 p-4 dark:bg-slate-700">
+                <div className="text-sm text-slate-600 dark:text-slate-400">Total Probes</div>
+                <div className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
+                  {latestRun.probe_count}
+                </div>
+              </div>
+              <div className="rounded-lg bg-slate-50 p-4 dark:bg-slate-700">
+                <div className="text-sm text-slate-600 dark:text-slate-400">Errors</div>
+                <div className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
+                  {latestRun.error_count}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Recent Audit Logs */}
+        <div className="rounded-lg bg-white p-6 shadow-md dark:bg-slate-800">
+          <h2 className="mb-4 text-xl font-semibold text-slate-900 dark:text-white">
+            Recent Audit Logs (Last 50)
+          </h2>
+          {recentLogs.length === 0 ? (
+            <p className="text-slate-500 dark:text-slate-400">
+              No audit logs yet. Run your first audit to see results here.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
+                <thead>
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Timestamp
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Brand
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Region
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Status
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      TTFB (ms)
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Cache Status
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                  {recentLogs.map((log) => (
+                    <tr key={log.id} className="hover:bg-slate-50 dark:hover:bg-slate-700">
+                      <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-900 dark:text-slate-300">
+                        {new Date(log.timestamp).toLocaleTimeString()}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-900 dark:text-slate-300">
+                        {log.brand_url.replace('https://', '')}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-sm font-mono text-slate-900 dark:text-slate-300">
+                        {log.region}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-sm">
+                        {log.error_message ? (
+                          <span className="text-red-600 dark:text-red-400">Error</span>
+                        ) : (
+                          <span className={log.status >= 200 && log.status < 300 ? 'text-green-600 dark:text-green-400' : 'text-yellow-600 dark:text-yellow-400'}>
+                            {log.status}
+                          </span>
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-900 dark:text-slate-300">
+                        {log.ttfb}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-sm font-mono text-slate-600 dark:text-slate-400">
+                        {log.headers['cf-cache-status'] || 
+                         log.headers['x-vercel-cache'] || 
+                         log.headers['x-cache'] || 
+                         '-'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

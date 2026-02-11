@@ -1,0 +1,28 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/run-audit",
+      "schedule": "0 * * * *"
+    }
+  ],
+  "functions": {
+    "app/api/probes/iad1/route.ts": { 
+      "regions": ["iad1"] 
+    },
+    "app/api/probes/lhr1/route.ts": { 
+      "regions": ["lhr1"] 
+    },
+    "app/api/probes/sfo1/route.ts": { 
+      "regions": ["sfo1"] 
+    },
+    "app/api/probes/fra1/route.ts": { 
+      "regions": ["fra1"] 
+    },
+    "app/api/probes/syd1/route.ts": { 
+      "regions": ["syd1"] 
+    },
+    "app/api/cron/run-audit/route.ts": { 
+      "maxDuration": 60 
+    }
+  }
+}
