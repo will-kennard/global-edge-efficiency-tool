@@ -59,6 +59,19 @@ The Global Edge Efficiency Analyzer is a distributed auditing system that measur
 - Defines TypeScript interfaces for audit log records
 - Single source of truth for database connection
 
+### 1b. Data Access Layer (`lib/data/audit-logs.ts`)
+- All SQL queries for `audit_logs` live here
+- `getRecentAuditLogs(limit?)` - fetch recent rows
+- `getLatestRunSummary(withinHours?)` - latest run aggregates
+- `insertAuditLogs(rows)` - batch insert probe results
+- Consumed by services; never by UI directly
+
+### 1c. Analytics Layer (`lib/analytics.ts`)
+- Reusable analysis functions for future pages
+- `getRegionalMetrics`, `getCacheHitRates`, `getTrendSeries`, `getBrandSummaries`, `getRunHistory`
+- Time-windowed metrics (1h, 24h, 7d, 30d)
+- Returns serializable objects for Server Components and API routes
+
 ### 2. Probe Logic (`lib/probe-logic.ts`)
 - Shared function `runProbe(url, region)` that:
   - Executes HEAD requests with 6-second timeout
@@ -80,7 +93,7 @@ Each route:
 - Delegates to shared `runProbe()` logic
 - Returns JSON with region, TTFB, status, headers, and optional error
 
-### 4. Audit Runner (`lib/audit-runner.ts`)
+### 4. Audit Service (`lib/services/audit-service.ts`)
 Core orchestration logic:
 - Processes brands from `config/brands.ts` in batches of 5
 - For each brand, calls all 5 probe endpoints in parallel using `Promise.all()`
@@ -340,7 +353,7 @@ ORDER BY avg_ttfb ASC;
 **Symptom**: Orchestrator times out before completing all brands
 
 **Solution**:
-1. Reduce batch size in `lib/audit-runner.ts` (currently 5)
+1. Reduce batch size in `lib/services/audit-service.ts` (currently 5)
 2. Increase `maxDuration` in `vercel.json` (currently 60 seconds)
 3. Consider splitting brand list into multiple smaller lists
 

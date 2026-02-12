@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { runFullAudit } from '@/lib/audit-runner';
+import { runFullAudit } from '@/lib/services/audit-service';
 
 export async function GET(request: NextRequest) {
   try {

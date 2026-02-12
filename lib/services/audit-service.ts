@@ -1,6 +1,13 @@
-import { sql } from './db';
 import { MONITORED_BRANDS } from '@/config/brands';
-import type { ProbeResult } from './probe-logic';
+import type { ProbeResult } from '@/lib/probe-logic';
+import {
+  getRecentAuditLogs,
+  getLatestRunSummary,
+  insertAuditLogs,
+  type AuditLogInsertRow,
+  type AuditLogRow,
+  type RunSummary,
+} from '@/lib/data/audit-logs';
 import { randomUUID } from 'crypto';
 
 const PROBE_REGIONS = ['iad1', 'lhr1', 'sfo1', 'fra1', 'syd1'] as const;
@@ -13,30 +20,44 @@ export interface AuditRunResult {
   errors?: string[];
 }
 
+export interface DashboardData {
+  logs: AuditLogRow[];
+  latestRun: RunSummary | null;
+}
+
 /**
- * Run a full audit cycle for all monitored brands
- * Processes brands in batches, probing from all 5 regions simultaneously
+ * Run a full audit cycle for all monitored brands.
+ * Processes brands in batches, probing from all 5 regions simultaneously.
  */
-export async function runFullAudit(baseUrl: string, cronSecret: string): Promise<AuditRunResult> {
+export async function runFullAudit(
+  baseUrl: string,
+  cronSecret: string
+): Promise<AuditRunResult> {
   const brands = [...MONITORED_BRANDS];
   let totalRowsInserted = 0;
   const errors: string[] = [];
 
-  // Process brands in batches
   for (let i = 0; i < brands.length; i += BATCH_SIZE) {
     const batch = brands.slice(i, i + BATCH_SIZE);
-    
+
     try {
       const batchResults = await Promise.all(
-        batch.map(brandUrl => auditBrand(brandUrl, baseUrl, cronSecret))
+        batch.map((brandUrl) => auditBrand(brandUrl, baseUrl, cronSecret))
       );
 
-      // Flatten all probe results from this batch
       const allProbeResults = batchResults.flat();
 
-      // Batch insert into database
       if (allProbeResults.length > 0) {
-        await insertAuditLogs(allProbeResults);
+        const rows: AuditLogInsertRow[] = allProbeResults.map((r) => ({
+          request_id: r.request_id,
+          brand_url: r.brand_url,
+          region: r.region,
+          status: r.status,
+          ttfb: r.ttfb,
+          headers: r.headers,
+          error_message: r.error ?? null,
+        }));
+        await insertAuditLogs(rows);
         totalRowsInserted += allProbeResults.length;
       }
     } catch (error) {
@@ -54,7 +75,7 @@ export async function runFullAudit(baseUrl: string, cronSecret: string): Promise
 }
 
 /**
- * Audit a single brand by probing from all 5 regions
+ * Audit a single brand by probing from all 5 regions.
  */
 async function auditBrand(
   brandUrl: string,
@@ -63,11 +84,10 @@ async function auditBrand(
 ): Promise<Array<ProbeResult & { brand_url: string; request_id: string }>> {
   const requestId = randomUUID();
 
-  // Call all 5 probe endpoints in parallel
   const probePromises = PROBE_REGIONS.map(async (region) => {
     try {
       const probeUrl = `${baseUrl}/api/probes/${region}?url=${encodeURIComponent(brandUrl)}`;
-      
+
       const response = await fetch(probeUrl, {
         headers: {
           Authorization: `Bearer ${cronSecret}`,
@@ -79,14 +99,13 @@ async function auditBrand(
       }
 
       const result: ProbeResult = await response.json();
-      
+
       return {
         ...result,
         brand_url: brandUrl,
         request_id: requestId,
       };
     } catch (error) {
-      // Return an error result for this probe
       return {
         region,
         brand_url: brandUrl,
@@ -103,43 +122,20 @@ async function auditBrand(
 }
 
 /**
- * Batch insert audit log results into the database
+ * Fetch data for the dashboard: recent logs and latest run summary.
+ * Runs both queries in parallel.
  */
-async function insertAuditLogs(
-  results: Array<ProbeResult & { brand_url: string; request_id: string }>
-): Promise<void> {
-  // Build values for batch insert
-  const values = results.map((result) => ({
-    request_id: result.request_id,
-    brand_url: result.brand_url,
-    region: result.region,
-    status: result.status,
-    ttfb: result.ttfb,
-    headers: JSON.stringify(result.headers),
-    error_message: result.error || null,
-  }));
+export async function getDashboardData(options?: {
+  logsLimit?: number;
+  summaryWithinHours?: number;
+}): Promise<DashboardData> {
+  const logsLimit = options?.logsLimit ?? 50;
+  const summaryWithinHours = options?.summaryWithinHours ?? 2;
 
-  // Use a transaction to insert all rows
-  for (const row of values) {
-    await sql`
-      INSERT INTO audit_logs (
-        request_id, 
-        brand_url, 
-        region, 
-        status, 
-        ttfb, 
-        headers, 
-        error_message
-      )
-      VALUES (
-        ${row.request_id},
-        ${row.brand_url},
-        ${row.region},
-        ${row.status},
-        ${row.ttfb},
-        ${row.headers},
-        ${row.error_message}
-      )
-    `;
-  }
+  const [logs, latestRun] = await Promise.all([
+    getRecentAuditLogs(logsLimit),
+    getLatestRunSummary(summaryWithinHours),
+  ]);
+
+  return { logs, latestRun };
 }
