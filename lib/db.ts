@@ -8,6 +8,7 @@ export const sql = neon(process.env.POSTGRES_URL);
 
 export interface AuditLog {
   id: number;
+  batch_id: string;
   request_id: string;
   brand_url: string;
   region: string;
@@ -19,6 +20,7 @@ export interface AuditLog {
 }
 
 export interface AuditLogInsert {
+  batch_id: string;
   request_id: string;
   brand_url: string;
   region: string;

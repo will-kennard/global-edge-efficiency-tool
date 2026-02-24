@@ -19,3 +19,21 @@ export async function triggerAudit(): Promise<void> {
 
   revalidatePath('/');
 }
+
+export async function triggerSingleBrandAudit(): Promise<void> {
+  const baseUrl = process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : 'http://localhost:3000';
+
+  const response = await fetch(`${baseUrl}/api/audit/single-brand`, {
+    headers: {
+      Authorization: `Bearer ${process.env.CRON_SECRET}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Single brand audit failed with status ${response.status}`);
+  }
+
+  revalidatePath('/');
+}

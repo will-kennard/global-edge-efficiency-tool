@@ -20,23 +20,27 @@ The Global Edge Efficiency Analyzer is a distributed auditing system that measur
 - **5 Regional Probe Endpoints** - Edge functions deployed to specific regions (US East, London, San Francisco, Frankfurt, Sydney)
 - **Orchestrator** - A cron job that coordinates audits across all probes
 - **Database** - Neon Postgres storing time-series audit data
-- **Minimal UI** - Dashboard for manual triggers and recent results
+- **Single Brand Testing** - Dedicated endpoint and config for testing one brand at a time
+- **Minimal UI** - Dashboard with batch selector, manual triggers, and filtered results
 
 ### Request Flow
 
 ```
-┌─────────────┐
-│ Vercel Cron │ (hourly)
-│  or Manual  │
-└──────┬──────┘
-       │
-       ▼
-┌──────────────────┐
-│  run-audit API   │ (Orchestrator)
-└──────┬───────────┘
-       │
-       ├─────────┬─────────┬─────────┬─────────┐
-       ▼         ▼         ▼         ▼         ▼
+┌─────────────┐     ┌───────────────┐
+│ Vercel Cron │     │ Single Brand  │
+│  or Manual  │     │    Test       │
+└──────┬──────┘     └──────┬────────┘
+       │                   │
+       ▼                   ▼
+┌──────────────┐   ┌───────────────┐
+│ run-audit    │   │ single-brand  │     Each run generates
+│ (full)       │   │ (one brand)   │ ──▶ a unique batch_id
+└──────┬───────┘   └──────┬────────┘
+       │                  │
+       └────────┬─────────┘
+                │
+       ┌────────┴────────┬─────────┬─────────┐
+       ▼        ▼        ▼         ▼         ▼
    ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐
    │ IAD1 │ │ LHR1 │ │ SFO1 │ │ FRA1 │ │ SYD1 │ (5 probes)
    └──┬───┘ └──┬───┘ └──┬───┘ └──┬───┘ └──┬───┘
@@ -61,8 +65,10 @@ The Global Edge Efficiency Analyzer is a distributed auditing system that measur
 
 ### 1b. Data Access Layer (`lib/data/audit-logs.ts`)
 - All SQL queries for `audit_logs` live here
-- `getRecentAuditLogs(limit?)` - fetch recent rows
-- `getLatestRunSummary(withinHours?)` - latest run aggregates
+- `getRecentBatches(limit?)` - fetch recent batch summaries grouped by `batch_id`
+- `getLogsByBatchId(batchId)` - fetch all rows for a specific batch
+- `getLatestRunSummary(withinHours?)` - latest run aggregates grouped by `batch_id`
+- `getRecentAuditLogs(limit?)` - fetch recent rows (legacy, not used by dashboard)
 - `insertAuditLogs(rows)` - batch insert probe results
 - Consumed by services; never by UI directly
 
@@ -95,30 +101,43 @@ Each route:
 
 ### 4. Audit Service (`lib/services/audit-service.ts`)
 Core orchestration logic:
-- Processes brands from `config/brands.ts` in batches of 5
-- For each brand, calls all 5 probe endpoints in parallel using `Promise.all()`
-- Generates a unique `request_id` (UUID) per brand to group the 5 regional results
+- `runFullAudit()` - processes all brands from `config/brands.ts` in batches of 5
+- `runSingleBrandAudit()` - audits a single brand from all 5 regions (for testing or customer audits)
+- Generates a `batch_id` (UUID) per audit run to group all results from that run
+- Within each batch, generates a `request_id` (UUID) per brand to group the 5 regional probes
 - Flattens results and performs batch inserts into `audit_logs`
-- Returns summary: brands audited, rows inserted, errors
+- `getDashboardData()` - fetches recent batches, logs for a selected batch, and latest run summary
+- Returns summary: batch_id, brands audited, rows inserted, errors
 
 ### 5. Cron Endpoint (`app/api/cron/run-audit/route.ts`)
-- Entry point for scheduled and manual audits
+- Entry point for scheduled and manual full audits
 - Accepts either:
   - Vercel cron header (`x-vercel-cron`)
   - Bearer token authorization for manual triggers
 - Constructs base URL for self-referencing probe calls
 - Invokes `runFullAudit()` and returns JSON summary
 
+### 5b. Single-Brand Endpoint (`app/api/audit/single-brand/route.ts`)
+- Entry point for single-brand audits (testing or customer use)
+- Accepts bearer token authorization
+- Optionally accepts `?url=` query parameter; defaults to `SINGLE_BRAND_URL` from config
+- Invokes `runSingleBrandAudit()` and returns JSON summary
+
 ### 6. Dashboard UI (`app/page.tsx`)
 Server-rendered page with:
-- **Control Panel**: "Run Audit Now" button (server action)
-- **Latest Run Summary**: Stats from the most recent audit cycle
-- **Recent Logs Table**: Last 50 audit records with timestamp, brand, region, status, TTFB, cache status
+- **Control Panel**: "Run Full Audit" button and "Test Single Brand" button (server actions)
+- **Latest Run Summary**: Stats from the most recent audit cycle (grouped by batch)
+- **Batch Selector**: Clickable pills showing recent batches with metadata (timestamp, brand count, probe count, errors)
+- **Filtered Logs Table**: Audit records for the selected batch, with timestamp, brand, region, status, TTFB, cache status
+- Batch selection uses URL search params (`?batch=<id>`) for server-rendered navigation
 
 ### 7. Configuration Files
 
 #### `config/brands.ts`
 Array of monitored brand URLs (currently 10 major sites)
+
+#### `config/single-brand.ts`
+Single brand URL for testing or customer-specific audits (edit this file to change the target)
 
 #### `vercel.json`
 - Hourly cron schedule: `"0 * * * *"` (every hour at :00)
@@ -212,24 +231,41 @@ openssl rand -base64 32
 
 ## Running the System
 
-### Manual Audit Trigger (UI)
+### Manual Full Audit (UI)
 1. Navigate to your deployed site or http://localhost:3000
-2. Click "Run Audit Now" in the Control Panel
-3. Wait for page reload - the Latest Run Summary will update
+2. Click "Run Full Audit" in the Control Panel
+3. Wait for page reload - the Latest Run Summary and Batch Selector will update
+
+### Single Brand Test (UI)
+1. Edit `config/single-brand.ts` to set the brand URL you want to test
+2. Click "Test Single Brand" in the Control Panel
+3. The batch will appear in the Batch Selector with 1 brand and 5 probes
 
 ### Manual Audit Trigger (API)
+
+**Full audit** (all brands):
 ```bash
 curl -X GET "https://your-app.vercel.app/api/cron/run-audit" \
   -H "Authorization: Bearer YOUR_CRON_SECRET"
 ```
 
-Response:
+**Single brand** (uses configured URL or custom `?url=` param):
+```bash
+curl -X GET "https://your-app.vercel.app/api/audit/single-brand" \
+  -H "Authorization: Bearer YOUR_CRON_SECRET"
+
+# Or with a custom URL:
+curl -X GET "https://your-app.vercel.app/api/audit/single-brand?url=https://example.com" \
+  -H "Authorization: Bearer YOUR_CRON_SECRET"
+```
+
+Response (both endpoints):
 ```json
 {
   "success": true,
+  "batch_id": "a1b2c3d4-...",
   "brands_audited": 10,
-  "rows_inserted": 50,
-  "errors": []
+  "rows_inserted": 50
 }
 ```
 
@@ -245,22 +281,24 @@ Once deployed to Vercel:
 
 ### Audit Cycle Flow
 
-1. **Trigger**: Vercel Cron or manual button click
-2. **Orchestrator Start**: `/api/cron/run-audit` receives request
-3. **Batch Processing**: 
-   - Brands are processed in chunks of 5 to avoid timeout
-   - For each brand, generate a unique `request_id` (UUID)
-4. **Probe Fan-Out**:
-   - Orchestrator calls all 5 probe endpoints in parallel
+1. **Trigger**: Vercel Cron, manual "Run Full Audit" button, or "Test Single Brand" button
+2. **Batch ID**: A unique `batch_id` (UUID) is generated to group the entire run
+3. **Orchestrator Start**: `/api/cron/run-audit` (full) or `/api/audit/single-brand` (single) receives request
+4. **Brand Processing**: 
+   - Full audit: brands are processed in chunks of 5 to avoid timeout
+   - Single brand: one brand is processed immediately
+   - For each brand, generate a unique `request_id` (UUID) to group its 5 regional probes
+5. **Probe Fan-Out**:
+   - Orchestrator calls all 5 probe endpoints in parallel per brand
    - Each probe executes HEAD request from its region
    - Probes measure TTFB and extract headers
-5. **Data Collection**:
+6. **Data Collection**:
    - Each probe returns JSON: `{ region, ttfb, status, headers, error? }`
    - Orchestrator collects all 5 responses (success or error)
-6. **Database Persistence**:
+7. **Database Persistence**:
    - Results are batch-inserted into `audit_logs`
-   - Each row includes `request_id` to group the 5 regional probes
-7. **Response**: Summary JSON returned to caller
+   - Each row includes both `batch_id` (run-level grouping) and `request_id` (brand-level grouping)
+8. **Response**: Summary JSON with `batch_id` returned to caller
 
 ### Security Model
 
@@ -277,7 +315,8 @@ Once deployed to Vercel:
 | Column | Type | Description |
 |--------|------|-------------|
 | `id` | SERIAL | Auto-incrementing primary key |
-| `request_id` | UUID | Groups the 5 probes for a single brand audit |
+| `batch_id` | UUID | Groups all probes from a single audit run (full or single-brand) |
+| `request_id` | UUID | Groups the 5 regional probes for a single brand within a batch |
 | `brand_url` | TEXT | The URL that was audited |
 | `region` | TEXT | Region identifier (iad1, lhr1, sfo1, fra1, syd1) |
 | `timestamp` | TIMESTAMPTZ | When the probe was executed (defaults to NOW()) |
@@ -288,7 +327,8 @@ Once deployed to Vercel:
 
 ### Indexes
 - `idx_audit_logs_timestamp` - Optimizes recent log queries
-- `idx_audit_logs_request_id` - Groups probes by audit cycle
+- `idx_audit_logs_batch_id` - Groups probes by audit run
+- `idx_audit_logs_request_id` - Groups probes by brand within a run
 - `idx_audit_logs_region` - Filters by region
 
 ### Example Query: Average TTFB by Region
@@ -379,8 +419,10 @@ Use this checklist to verify your deployment:
 - [ ] Environment variables set in `.env.local`
 - [ ] Dev server starts: `npm run dev`
 - [ ] Dashboard loads at http://localhost:3000
-- [ ] "Run Audit Now" button triggers audit successfully
-- [ ] Recent logs appear after audit completes
+- [ ] "Run Full Audit" button triggers audit successfully
+- [ ] "Test Single Brand" button triggers single-brand audit successfully
+- [ ] Batch selector appears and shows completed batches
+- [ ] Clicking a batch shows its logs in the table
 
 ### Production Deployment
 - [ ] Environment variables set in Vercel dashboard
@@ -394,8 +436,10 @@ Use this checklist to verify your deployment:
 - [ ] Wait 1 hour and verify cron executed (check Vercel logs)
 
 ### Data Validation
-- [ ] Audit inserts 5 rows per brand (1 per region)
-- [ ] All 5 rows share the same `request_id`
+- [ ] Full audit inserts 5 rows per brand (1 per region)
+- [ ] All rows from one audit run share the same `batch_id`
+- [ ] All 5 rows for one brand share the same `request_id`
+- [ ] Single-brand audit inserts exactly 5 rows with 1 `batch_id` and 1 `request_id`
 - [ ] TTFB values are reasonable (not all 0 or 6000)
 - [ ] Headers are captured (JSONB not empty)
 - [ ] Error rows have non-null `error_message`

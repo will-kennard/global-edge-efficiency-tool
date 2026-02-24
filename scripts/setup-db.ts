@@ -7,6 +7,7 @@ async function setupDatabase() {
     await sql`
       CREATE TABLE IF NOT EXISTS audit_logs (
         id SERIAL PRIMARY KEY,
+        batch_id UUID NOT NULL,
         request_id UUID NOT NULL,
         brand_url TEXT NOT NULL,
         region TEXT NOT NULL,
@@ -19,6 +20,24 @@ async function setupDatabase() {
     `;
 
     console.log('✓ audit_logs table created successfully');
+
+    // Migration for existing databases: add batch_id if missing
+    await sql`
+      ALTER TABLE audit_logs
+      ADD COLUMN IF NOT EXISTS batch_id UUID
+    `;
+
+    // Backfill: set batch_id = request_id for any rows that predate the migration
+    await sql`
+      UPDATE audit_logs SET batch_id = request_id WHERE batch_id IS NULL
+    `;
+
+    // Now enforce NOT NULL (safe after backfill)
+    await sql`
+      ALTER TABLE audit_logs ALTER COLUMN batch_id SET NOT NULL
+    `;
+
+    console.log('✓ batch_id column ensured');
 
     // Create indexes for common queries
     await sql`
@@ -34,6 +53,11 @@ async function setupDatabase() {
     await sql`
       CREATE INDEX IF NOT EXISTS idx_audit_logs_region 
       ON audit_logs(region)
+    `;
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_audit_logs_batch_id 
+      ON audit_logs(batch_id)
     `;
 
     console.log('✓ Indexes created successfully');
