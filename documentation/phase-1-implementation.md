@@ -386,6 +386,7 @@ ORDER BY avg_ttfb ASC;
 1. Check `vercel.json` paths match actual file structure
 2. Verify deployment logs show region assignments
 3. Note: Region pinning only works on Vercel Pro/Enterprise plans for some regions
+4. Region pinning only works on Vercel, not locally
 
 ---
 

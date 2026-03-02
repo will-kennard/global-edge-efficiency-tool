@@ -1,1 +1,1 @@
-export const SINGLE_BRAND_URL = 'https://nike.com';
+export const SINGLE_BRAND_URL = 'https://www.willkennard.com/';
