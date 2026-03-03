@@ -125,11 +125,18 @@ Core orchestration logic:
 
 ### 6. Dashboard UI (`app/page.tsx`)
 Server-rendered page with:
-- **Control Panel**: "Run Full Audit" button and "Test Single Brand" button (server actions)
+- **Control Panel**: "Run All Brands (Once)" button and "Test Single Brand" button (server actions), with note about Vercel Cron hourly automation
 - **Latest Run Summary**: Stats from the most recent audit cycle (grouped by batch)
-- **Batch Selector**: Clickable pills showing recent batches with metadata (timestamp, brand count, probe count, errors)
-- **Filtered Logs Table**: Audit records for the selected batch, with timestamp, brand, region, status, TTFB, cache status
-- Batch selection uses URL search params (`?batch=<id>`) for server-rendered navigation
+- **Batch Selector**: Clickable pills showing recent batches with metadata (timestamp, brand count, probe count, errors); each pill links to a dedicated batch detail page
+
+### 6b. Batch Detail Page (`app/batch/[id]/page.tsx`)
+Server-rendered detail page for a single audit batch:
+- **Batch Header**: Batch ID, run time, brand count, probe count, error count
+- **Regional Comparison Table**: One row per region with avg/min/max TTFB, probe count, success count, error count
+- **Per-Brand Breakdown**: Grouped by brand URL, each showing:
+  - All 5 regional probe results side-by-side (region, status, TTFB, cache status, error)
+  - Expandable "View all response headers" section displaying every key-value pair from the JSONB `headers` column
+- **Back link** to dashboard
 
 ### 7. Configuration Files
 
@@ -233,13 +240,15 @@ openssl rand -base64 32
 
 ### Manual Full Audit (UI)
 1. Navigate to your deployed site or http://localhost:3000
-2. Click "Run Full Audit" in the Control Panel
+2. Click "Run All Brands (Once)" in the Control Panel
 3. Wait for page reload - the Latest Run Summary and Batch Selector will update
+4. Click a batch pill to view the full detail page with regional comparison and all response headers
 
 ### Single Brand Test (UI)
 1. Edit `config/single-brand.ts` to set the brand URL you want to test
 2. Click "Test Single Brand" in the Control Panel
 3. The batch will appear in the Batch Selector with 1 brand and 5 probes
+4. Click the batch pill to see per-region breakdown and full headers
 
 ### Manual Audit Trigger (API)
 
@@ -281,7 +290,7 @@ Once deployed to Vercel:
 
 ### Audit Cycle Flow
 
-1. **Trigger**: Vercel Cron, manual "Run Full Audit" button, or "Test Single Brand" button
+1. **Trigger**: Vercel Cron, manual "Run All Brands (Once)" button, or "Test Single Brand" button
 2. **Batch ID**: A unique `batch_id` (UUID) is generated to group the entire run
 3. **Orchestrator Start**: `/api/cron/run-audit` (full) or `/api/audit/single-brand` (single) receives request
 4. **Brand Processing**: 
@@ -420,10 +429,11 @@ Use this checklist to verify your deployment:
 - [ ] Environment variables set in `.env.local`
 - [ ] Dev server starts: `npm run dev`
 - [ ] Dashboard loads at http://localhost:3000
-- [ ] "Run Full Audit" button triggers audit successfully
+- [ ] "Run All Brands (Once)" button triggers audit successfully
 - [ ] "Test Single Brand" button triggers single-brand audit successfully
 - [ ] Batch selector appears and shows completed batches
-- [ ] Clicking a batch shows its logs in the table
+- [ ] Clicking a batch pill navigates to `/batch/[id]` detail page
+- [ ] Batch detail page shows regional comparison, per-brand breakdown, and full response headers
 
 ### Production Deployment
 - [ ] Environment variables set in Vercel dashboard
@@ -451,12 +461,11 @@ Use this checklist to verify your deployment:
 
 Phase 1 is complete! Potential future additions:
 
-- **Analytics Dashboard**: Charts showing TTFB trends over time
+- **Analytics Dashboard**: Charts showing TTFB trends over time (analytics layer in `lib/analytics.ts` is ready)
 - **Regional Performance Maps**: Visual map of response times
 - **Alerting**: Notifications when TTFB exceeds thresholds
 - **Brand Management UI**: Add/remove brands without code changes
 - **Export Functionality**: Download audit data as CSV
-- **Comparative Analysis**: Side-by-side region comparisons
 - **Historical Aggregations**: Hourly/daily rollups for long-term trends
 
 ---
@@ -470,5 +479,5 @@ For issues or questions:
 
 ---
 
-**Last Updated**: February 2026  
-**Version**: Phase 1 (Backend + Minimal UI)
+**Last Updated**: March 2026  
+**Version**: Phase 1 (Backend + UI with Batch Detail Page)
