@@ -1,10 +1,4 @@
 {
-  "crons": [
-    {
-      "path": "/api/cron/run-audit",
-      "schedule": "0 * * * *"
-    }
-  ],
   "functions": {
     "app/api/probes/iad1/route.ts": { 
       "regions": ["iad1"] 
