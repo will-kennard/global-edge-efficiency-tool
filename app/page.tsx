@@ -1,12 +1,11 @@
-import { MONITORED_BRANDS } from '@/config/brands';
-import { SINGLE_BRAND_URL } from '@/config/single-brand';
+import { BRAND_LISTS } from '@/config/brand-lists';
 import { getDashboardData } from '@/lib/services/audit-service';
-import { triggerAudit, triggerSingleBrandAudit } from '@/app/actions';
-import { SubmitButton } from '@/app/components/submit-button';
+import { ControlPanel } from '@/app/components/control-panel';
 import Link from 'next/link';
 
 export default async function Home() {
   const { batches, latestRun } = await getDashboardData();
+  const uniqueBrandCount = new Set(BRAND_LISTS.flatMap((l) => l.brands.map((b) => b.company_url))).size;
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans">
@@ -17,47 +16,12 @@ export default async function Home() {
             Global Edge Efficiency Analyzer
           </h1>
           <p className="mt-2 text-lg text-foreground/60">
-            Distributed edge cache auditing from {MONITORED_BRANDS.length} brands across 5 global regions
+            Distributed edge cache auditing across {uniqueBrandCount}+ brands and 5 global regions
           </p>
         </div>
 
         {/* Control Panel */}
-        <div className="mb-8 rounded-lg border border-black/[.08] bg-background p-6 dark:border-white/[.145]">
-          <h2 className="mb-4 text-xl font-semibold text-foreground">
-            Control Panel
-          </h2>
-          <div className="flex flex-wrap gap-4">
-            <div>
-              <form action={triggerAudit}>
-                <SubmitButton
-                  className="rounded-lg bg-foreground px-6 py-3 font-medium text-background transition-colors hover:bg-foreground/90 focus:outline-none focus:ring-2 focus:ring-foreground/20 focus:ring-offset-2 focus:ring-offset-background disabled:opacity-70 disabled:cursor-not-allowed"
-                  loadingLabel="Running..."
-                >
-                  Run All Brands (Once)
-                </SubmitButton>
-              </form>
-              <p className="mt-2 text-sm text-foreground/60">
-                One-off audit of all {MONITORED_BRANDS.length} brands from 5 regions
-              </p>
-            </div>
-            <div>
-              <form action={triggerSingleBrandAudit}>
-                <SubmitButton
-                  className="rounded-lg border border-foreground/20 bg-background px-6 py-3 font-medium text-foreground transition-colors hover:bg-foreground/5 focus:outline-none focus:ring-2 focus:ring-foreground/20 focus:ring-offset-2 focus:ring-offset-background disabled:opacity-70 disabled:cursor-not-allowed"
-                  loadingLabel="Running..."
-                >
-                  Test Single Brand
-                </SubmitButton>
-              </form>
-              <p className="mt-2 text-sm text-foreground/60">
-                One-off probe of {SINGLE_BRAND_URL.replace('https://', '')} from all 5 regions
-              </p>
-            </div>
-          </div>
-          <p className="mt-4 text-xs text-foreground/40">
-            Run audits manually. Results appear in batch history below.
-          </p>
-        </div>
+        <ControlPanel />
 
         {/* Latest Run Summary */}
         {latestRun && (

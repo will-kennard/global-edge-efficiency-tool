@@ -1,4 +1,5 @@
 import { getLogsByBatchId, type AuditLogRow } from '@/lib/data/audit-logs';
+import { getTechStack } from '@/config/brand-lists';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
@@ -201,6 +202,7 @@ export default async function BatchDetailPage({
               );
             })();
             const brandErrors = brandLogs.filter((l) => l.error_message).length;
+            const techStack = getTechStack(brandUrl);
 
             return (
               <div
@@ -209,9 +211,16 @@ export default async function BatchDetailPage({
               >
                 {/* Brand header */}
                 <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
-                  <h3 className="text-lg font-semibold text-foreground">
-                    {brandUrl.replace('https://', '')}
-                  </h3>
+                  <div>
+                    <h3 className="text-lg font-semibold text-foreground">
+                      {brandUrl.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+                    </h3>
+                    {techStack && (
+                      <p className="mt-1 text-sm text-foreground/60">
+                        Tech stack: {techStack}
+                      </p>
+                    )}
+                  </div>
                   <div className="flex gap-4 text-sm text-foreground/60">
                     <span>Avg TTFB: <span className="font-mono text-foreground">{brandAvgTtfb}ms</span></span>
                     <span>{brandLogs.length} probes</span>
@@ -237,6 +246,9 @@ export default async function BatchDetailPage({
                         </th>
                         <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-foreground/60">
                           Cache
+                        </th>
+                        <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-foreground/60">
+                          Tech Stack
                         </th>
                         <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-foreground/60">
                           Error
@@ -269,6 +281,9 @@ export default async function BatchDetailPage({
                               log.headers['x-vercel-cache'] ||
                               log.headers['x-cache'] ||
                               '-'}
+                          </td>
+                          <td className="px-4 py-2 text-sm text-foreground/60">
+                            {techStack || '-'}
                           </td>
                           <td className="px-4 py-2 text-sm text-red-600 dark:text-red-400">
                             {log.error_message ?? ''}

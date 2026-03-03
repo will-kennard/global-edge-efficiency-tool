@@ -35,15 +35,16 @@ export interface DashboardData {
  */
 export async function runFullAudit(
   baseUrl: string,
-  cronSecret: string
+  cronSecret: string,
+  brands?: string[]
 ): Promise<AuditRunResult> {
   const batchId = randomUUID();
-  const brands = [...MONITORED_BRANDS];
+  const brandUrls = brands ?? [...MONITORED_BRANDS];
   let totalRowsInserted = 0;
   const errors: string[] = [];
 
-  for (let i = 0; i < brands.length; i += BATCH_SIZE) {
-    const batch = brands.slice(i, i + BATCH_SIZE);
+  for (let i = 0; i < brandUrls.length; i += BATCH_SIZE) {
+    const batch = brandUrls.slice(i, i + BATCH_SIZE);
 
     try {
       const batchResults = await Promise.all(
@@ -75,7 +76,7 @@ export async function runFullAudit(
   return {
     success: errors.length === 0,
     batch_id: batchId,
-    brands_audited: brands.length,
+    brands_audited: brandUrls.length,
     rows_inserted: totalRowsInserted,
     errors: errors.length > 0 ? errors : undefined,
   };

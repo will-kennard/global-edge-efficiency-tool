@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { runFullAudit, runSingleBrandAudit } from '@/lib/services/audit-service';
 import { SINGLE_BRAND_URL } from '@/config/single-brand';
+import { BRAND_LISTS } from '@/config/brand-lists';
 
 function getBaseUrl(): string {
   return process.env.VERCEL_URL
@@ -10,13 +11,16 @@ function getBaseUrl(): string {
     : `http://localhost:${process.env.PORT || 3000}`;
 }
 
-export async function triggerAudit(): Promise<void> {
+export async function triggerAudit(listKey: string): Promise<void> {
   const cronSecret = process.env.CRON_SECRET;
   if (!cronSecret) {
     throw new Error('CRON_SECRET not configured');
   }
 
-  const result = await runFullAudit(getBaseUrl(), cronSecret);
+  const list = BRAND_LISTS.find((l) => l.key === listKey);
+  const brands = list ? list.brands.map((b) => b.company_url) : [];
+
+  const result = await runFullAudit(getBaseUrl(), cronSecret, brands);
 
   if (!result.success) {
     throw new Error(`Audit failed: ${result.errors?.join(', ')}`);
