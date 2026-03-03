@@ -138,9 +138,16 @@ async function auditBrand(
 
   const probePromises = PROBE_REGIONS.map(async (region) => {
     try {
-      const probeUrl = `${baseUrl}/api/probes/${region}?url=${encodeURIComponent(brandUrl)}`;
+      const probeUrl = new URL(`${baseUrl}/api/probes/${region}`);
+      probeUrl.searchParams.set('url', brandUrl);
+      if (process.env.VERCEL_AUTOMATION_BYPASS_SECRET) {
+        probeUrl.searchParams.set(
+          'x-vercel-protection-bypass',
+          process.env.VERCEL_AUTOMATION_BYPASS_SECRET,
+        );
+      }
 
-      const response = await fetch(probeUrl, {
+      const response = await fetch(probeUrl.toString(), {
         headers: {
           Authorization: `Bearer ${cronSecret}`,
           ...(process.env.VERCEL_AUTOMATION_BYPASS_SECRET && {
@@ -150,7 +157,10 @@ async function auditBrand(
       });
 
       if (!response.ok) {
-        throw new Error(`Probe ${region} returned ${response.status}`);
+        const body = await response.text().catch(() => '');
+        throw new Error(
+          `Probe ${region} returned ${response.status}: ${body.slice(0, 200)}`,
+        );
       }
 
       const result: ProbeResult = await response.json();

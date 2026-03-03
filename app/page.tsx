@@ -2,6 +2,7 @@ import { MONITORED_BRANDS } from '@/config/brands';
 import { SINGLE_BRAND_URL } from '@/config/single-brand';
 import { getDashboardData } from '@/lib/services/audit-service';
 import { triggerAudit, triggerSingleBrandAudit } from '@/app/actions';
+import { SubmitButton } from '@/app/components/submit-button';
 import Link from 'next/link';
 
 export default async function Home() {
@@ -28,12 +29,12 @@ export default async function Home() {
           <div className="flex flex-wrap gap-4">
             <div>
               <form action={triggerAudit}>
-                <button
-                  type="submit"
-                  className="rounded-lg bg-foreground px-6 py-3 font-medium text-background transition-colors hover:bg-foreground/90 focus:outline-none focus:ring-2 focus:ring-foreground/20 focus:ring-offset-2 focus:ring-offset-background"
+                <SubmitButton
+                  className="rounded-lg bg-foreground px-6 py-3 font-medium text-background transition-colors hover:bg-foreground/90 focus:outline-none focus:ring-2 focus:ring-foreground/20 focus:ring-offset-2 focus:ring-offset-background disabled:opacity-70 disabled:cursor-not-allowed"
+                  loadingLabel="Running..."
                 >
                   Run All Brands (Once)
-                </button>
+                </SubmitButton>
               </form>
               <p className="mt-2 text-sm text-foreground/60">
                 One-off audit of all {MONITORED_BRANDS.length} brands from 5 regions
@@ -41,12 +42,12 @@ export default async function Home() {
             </div>
             <div>
               <form action={triggerSingleBrandAudit}>
-                <button
-                  type="submit"
-                  className="rounded-lg border border-foreground/20 bg-background px-6 py-3 font-medium text-foreground transition-colors hover:bg-foreground/5 focus:outline-none focus:ring-2 focus:ring-foreground/20 focus:ring-offset-2 focus:ring-offset-background"
+                <SubmitButton
+                  className="rounded-lg border border-foreground/20 bg-background px-6 py-3 font-medium text-foreground transition-colors hover:bg-foreground/5 focus:outline-none focus:ring-2 focus:ring-foreground/20 focus:ring-offset-2 focus:ring-offset-background disabled:opacity-70 disabled:cursor-not-allowed"
+                  loadingLabel="Running..."
                 >
                   Test Single Brand
-                </button>
+                </SubmitButton>
               </form>
               <p className="mt-2 text-sm text-foreground/60">
                 One-off probe of {SINGLE_BRAND_URL.replace('https://', '')} from all 5 regions
@@ -54,7 +55,7 @@ export default async function Home() {
             </div>
           </div>
           <p className="mt-4 text-xs text-foreground/40">
-            Automated hourly audits run via Vercel Cron when deployed. Results appear in batch history below.
+            Run audits manually. Results appear in batch history below.
           </p>
         </div>
 
